@@ -1,107 +1,100 @@
 import streamlit as st
-import pandas as pd
 from docx import Document
-import pytz
-from datetime import datetime
+from datetime import datetime, timedelta
+import io
 
-# 🌍 Fuso horário de Maputo
-tz = pytz.timezone("Africa/Maputo")
-hora_local = datetime.now(tz).strftime("%A, %d %B %Y - %H:%M")
+st.set_page_config(page_title="Plano Quinzenal com Horários", layout="wide")
+st.title("📘 Gerador de Plano Quinzenal com Horários Personalizados")
 
-st.set_page_config(page_title="Planificador Quinzenal", layout="wide")
-st.title("📘 Planificador Quinzenal de Aulas")
-st.caption(f"🕒 Horário local: {hora_local}")
+# 📥 Upload do plano analítico
+uploaded_file = st.file_uploader("Carregue o plano analítico (.docx)", type="docx")
 
-# 📤 Upload de arquivos
-uploaded_files = st.file_uploader("Envie planos analíticos (.docx)", type="docx", accept_multiple_files=True)
+# 📅 Configurações
+col1, col2 = st.columns(2)
+with col1:
+    data_inicio = st.date_input("Data de início da quinzena", value=datetime.today())
+with col2:
+    curriculo_local = st.text_input("Currículo local", value="Currículo de Moçambique")
 
-# 📄 Função para ler plano analítico
-def ler_plano(file):
-    doc = Document(file)
-    tabela = doc.tables[0]
-    dados = []
-    for row in tabela.rows[1:]:
-        try:
-            licao = int(row.cells[1].text.strip())
-        except ValueError:
-            continue  # pula linhas com erro
+# ⏰ Inserir horários por tempo
+st.subheader("⏰ Horários por tempo")
+horarios = []
+for i in range(1, 7):
+    horarios.append(st.text_input(f"Tempo {i}", value=f"{7+i}:30 - {8+i}:15"))
 
-        dados.append({
-            "Disciplina": row.cells[0].text.strip(),
-            "Lição": licao,
-            "Objetivos": row.cells[2].text.strip(),
-            "Conteúdos": row.cells[3].text.strip(),
-            "Estratégias": row.cells[4].text.strip(),
-            "Recursos": row.cells[5].text.strip(),
-        })
-    return pd.DataFrame(dados)
+# 🔍 Função para extrair dados do documento
+def extrair_planos(doc):
+    planos = []
+    for tabela in doc.tables:
+        for i in range(1, len(tabela.rows)):
+            linha = tabela.rows[i].cells
+            planos.append({
+                "Disciplina": linha[0].text.strip(),
+                "Unidade Temática": linha[1].text.strip(),
+                "Objetivos": linha[2].text.strip(),
+                "Conteúdos": linha[3].text.strip(),
+                "Competências": linha[4].text.strip()
+            })
+    return planos
 
-# 📅 Dias e horários disponíveis
-dias_semana = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"]
-horarios_padrao = ["07:00–08:00", "08:00–09:00", "09:00–10:00", "10:30–11:30", "11:30–12:30"]
+# 🧠 Processamento
+if uploaded_file:
+    from docx import Document
+    doc_entrada = Document(uploaded_file)
+    planos = extrair_planos(doc_entrada)
+    disciplinas = list({p['Disciplina'] for p in planos})
+    dias_letivos = [data_inicio + timedelta(days=i) for i in range(14) if (data_inicio + timedelta(days=i)).weekday() < 5]
+    contador_licoes = {disc: 1 for disc in disciplinas}
 
-# 🧮 Interface para montar grade horária semanal
-st.sidebar.header("📆 Grade Horária Semanal")
-grade_horaria = {}
+    # 📄 Criar novo documento
+    doc_saida = Document()
+    doc_saida.add_heading("Plano Quinzenal Escolar", 0)
+    doc_saida.add_paragraph(f"Currículo Local: {curriculo_local}")
+    doc_saida.add_paragraph(" ")
 
-for dia in dias_semana:
-    st.sidebar.subheader(f"📅 {dia}")
-    grade_horaria[dia] = {}
-    for horario in horarios_padrao:
-        disciplina = st.sidebar.text_input(f"{dia} {horario}", "", key=f"{dia}_{horario}")
-        grade_horaria[dia][horario] = disciplina
+    for dia in dias_letivos:
+        doc_saida.add_heading(f"📅 {dia.strftime('%A, %d/%m/%Y')}", level=1)
+        tabela = doc_saida.add_table(rows=1, cols=11)
+        tabela.style = 'Table Grid'
+        hdr = tabela.rows[0].cells
+        hdr[0].text = "Tempo"
+        hdr[1].text = "Horário"
+        hdr[2].text = "Disciplina"
+        hdr[3].text = "Nº Lição"
+        hdr[4].text = "Unidade Temática"
+        hdr[5].text = "Objetivos"
+        hdr[6].text = "Conteúdos"
+        hdr[7].text = "Competências"
+        hdr[8].text = "Currículo Local"
+        hdr[9].text = "Método de Ensino"
+        hdr[10].text = "Material Didático"
 
-# 📊 Processamento dos planos
-if uploaded_files:
-    planos = {}
-    for file in uploaded_files:
-        nome = file.name.replace(".docx", "")
-        planos[nome] = ler_plano(file)
+        for tempo in range(1, 7):
+            disciplina = disciplinas[(tempo - 1) % len(disciplinas)]
+            plano = next((p for p in planos if p['Disciplina'] == disciplina), None)
+            if plano:
+                licao = contador_licoes[disciplina]
+                contador_licoes[disciplina] += 1
 
-    st.subheader("📚 Planos Analíticos Carregados")
-    for nome, df in planos.items():
-        st.markdown(f"**Plano:** {nome}")
-        st.dataframe(df)
+                linha = tabela.add_row().cells
+                linha[0].text = str(tempo)
+                linha[1].text = horarios[tempo - 1]
+                linha[2].text = disciplina
+                linha[3].text = str(licao)
+                linha[4].text = plano['Unidade Temática']
+                linha[5].text = plano['Objetivos']
+                linha[6].text = plano['Conteúdos']
+                linha[7].text = plano['Competências']
+                linha[8].text = curriculo_local
+                linha[9].text = "__________________________"
+                linha[10].text = "__________________________"
 
-    # 🗓️ Montar plano quinzenal (2 semanas)
-    st.markdown("## 🗓️ Plano Quinzenal de Aulas")
-    plano_quinzenal = []
+        doc_saida.add_paragraph(" ")
 
-    for semana_num in range(1, 3):  # Semana 1 e 2
-        for dia in dias_semana:
-            for horario in horarios_padrao:
-                disciplina = grade_horaria[dia][horario]
-                if disciplina:
-                    df = planos.get(disciplina)
-                    if df is not None and not df.empty:
-                        index = ((semana_num - 1) * len(dias_semana) * len(horarios_padrao)) + len(plano_quinzenal)
-                        plano = df.iloc[index % len(df)]  # distribui ciclicamente
-                        plano_quinzenal.append({
-                            "Semana": f"Semana {semana_num}",
-                            "Dia": dia,
-                            "Horário": horario,
-                            "Disciplina": plano["Disciplina"],
-                            "Lição": plano["Lição"],
-                            "Objetivos": plano["Objetivos"],
-                            "Conteúdos": plano["Conteúdos"],
-                            "Estratégias": plano["Estratégias"],
-                            "Recursos": plano["Recursos"],
-                        })
-                    else:
-                        plano_quinzenal.append({
-                            "Semana": f"Semana {semana_num}",
-                            "Dia": dia,
-                            "Horário": horario,
-                            "Disciplina": disciplina,
-                            "Lição": "❌ Não encontrado",
-                            "Objetivos": "",
-                            "Conteúdos": "",
-                            "Estratégias": "",
-                            "Recursos": "",
-                        })
-
-    df_quinzenal = pd.DataFrame(plano_quinzenal)
-    st.dataframe(df_quinzenal)
-
+    # 📤 Exportar documento
+    buffer = io.BytesIO()
+    doc_saida.save(buffer)
+    buffer.seek(0)
+    st.download_button("📄 Baixar plano quinzenal", data=buffer, file_name="plano_quinzenal.docx")
 else:
-    st.info("Envie pelo menos um arquivo .docx para começar.")
+    st.info("Envie um arquivo .docx com os planos analíticos para começar.")
