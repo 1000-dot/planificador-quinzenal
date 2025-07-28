@@ -1,86 +1,61 @@
 import streamlit as st
-import random
+import plotly.graph_objects as go
+import pandas as pd
+import json
+from deep_translator import GoogleTranslator
 
-# Configuração inicial
 st.set_page_config(page_title="Simulação de Pinocitose", layout="centered")
-st.title("🧫 Simulação de Pinocitose")
-st.markdown("Explore como uma célula absorve partículas através da pinocitose!")
+st.title("🧫 Simulação de Pinocitose Interativa")
 
-# Estado da célula
-energia = st.session_state.get("energia", 100)
-particulas = ["Nutriente", "Vírus", "Resíduo"]
-tipo = st.selectbox("Escolha o tipo de partícula para absorver:", particulas)
+# Estado inicial
+if "energia" not in st.session_state:
+    st.session_state.energia = 100
 
-# Função de absorção
-def absorver(tipo):
-    if tipo == "Nutriente":
-        return 10, "✅ Nutriente absorvido! Energia aumentada."
-    elif tipo == "Vírus":
-        return -20, "⚠️ Vírus detectado! Alerta ativado e energia reduzida."
-    elif tipo == "Resíduo":
-        return -5, "♻️ Resíduo absorvido. Energia levemente reduzida."
+# Tradução automática
+idioma = st.selectbox("🌍 Idioma da explicação:", ["pt", "en", "es", "fr"])
+texto_base = "A pinocitose é um processo celular de absorção de líquidos e partículas pequenas."
+texto_traduzido = GoogleTranslator(source='auto', target=idioma).translate(texto_base)
 
-# Botão de ação
-if st.button("Absorver Partícula"):
-    delta, mensagem = absorver(tipo)
-    energia += delta
-    st.session_state.energia = energia
-    st.success(mensagem)
+# Escolha de partícula
+particulas = {
+    "Nutriente": {"delta": 10, "mensagem": "✅ Nutriente absorvido!", "som": "assets/nutriente.mp3"},
+    "Vírus": {"delta": -20, "mensagem": "⚠️ Vírus detectado!", "som": "assets/virus.mp3"},
+    "Resíduo": {"delta": -5, "mensagem": "♻️ Resíduo absorvido.", "som": "assets/residuo.mp3"}
+}
+tipo = st.selectbox("Escolha a partícula:", list(particulas.keys()))
 
-# Exibição da energia
-st.progress(min(energia, 100))
-st.metric(label="Energia da Célula", value=f"{energia} unidades")
-
-# Mensagem educativa
-with st.expander("📘 O que é Pinocitose?"):
-    st.write("""
-    A pinocitose é um tipo de endocitose em que a célula absorve pequenas partículas líquidas.
-    É essencial para a nutrição celular e defesa contra agentes externos.
-    """)
-
-# Rodapé
-st.caption("Desenvolvido por Luís com apoio do Copilot ✨")
-import streamlit as st
-import random
-
-# Configuração inicial
-st.set_page_config(page_title="Simulação de Pinocitose", layout="centered")
-st.title("🧫 Simulação de Pinocitose com Sons e Animações")
-
-# Estado da célula
-energia = st.session_state.get("energia", 100)
-particulas = ["Nutriente", "Vírus", "Resíduo"]
-tipo = st.selectbox("Escolha a partícula:", particulas)
-
-# Função de absorção com som
-def absorver(tipo):
-    if tipo == "Nutriente":
-        st.audio("assets/nutriente.mp3", autoplay=True)
-        return 10, "✅ Nutriente absorvido!"
-    elif tipo == "Vírus":
-        st.audio("assets/virus.mp3", autoplay=True)
-        return -20, "⚠️ Vírus detectado!"
-    elif tipo == "Resíduo":
-        st.audio("assets/residuo.mp3", autoplay=True)
-        return -5, "♻️ Resíduo absorvido."
-
-# Botão de ação
+# Ação de absorção
 if st.button("Absorver"):
-    delta, mensagem = absorver(tipo)
-    energia += delta
-    st.session_state.energia = energia
-    st.success(mensagem)
+    efeito = particulas[tipo]
+    st.session_state.energia += efeito["delta"]
+    st.success(efeito["mensagem"])
+    st.audio(efeito["som"], autoplay=True)
 
-# 🎞️ Gráfico animado de energia
-st.markdown("### 🔋 Energia da Célula")
-st.bar_chart({"Energia": [energia]})
+# Energia
+st.metric("Energia da Célula", f"{st.session_state.energia} unidades")
+st.progress(min(st.session_state.energia, 100))
 
-# 📘 Explicação educativa
-with st.expander("O que é Pinocitose?"):
-    st.write("""
-    A pinocitose é um processo celular de absorção de líquidos e partículas pequenas.
-    Esta simulação mostra como diferentes substâncias afetam a energia da célula.
-    """)
+# Visualização 3D simulada
+fig = go.Figure(data=[
+    go.Mesh3d(
+        x=[0, 1, 0.5], y=[0, 0, 1], z=[0, 1, 0.5],
+        color='lightblue', opacity=0.5
+    )
+])
+fig.update_layout(title="Célula 3D Simulada", margin=dict(l=0, r=0, b=0, t=30))
+st.plotly_chart(fig)
 
-# Rodapé
+# Explicação educativa
+with st.expander("📘 O que é Pinocitose?"):
+    st.write(texto_traduzido)
+
+# Exportação de dados
+dados = {
+    "partícula": tipo,
+    "energia": st.session_state.energia
+}
+df = pd.DataFrame([dados])
+st.download_button("📥 Exportar como CSV", df.to_csv(index=False), "dados.csv", "text/csv")
+st.download_button("📥 Exportar como JSON", json.dumps(dados), "dados.json", "application/json")
+
 st.caption("Desenvolvido por Luís com apoio do Copilot ✨")
